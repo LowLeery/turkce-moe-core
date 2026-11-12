@@ -1,29 +1,33 @@
 from datasets import load_dataset
 from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
 
+def metin_al(ornek):
+    for anahtar in ("text", "content", "code", "output"):
+        if anahtar in ornek and isinstance(ornek[anahtar], str):
+            return ornek[anahtar]
+    return ""
+
 def veri_uretici():
-    print("Veri akışları bağlanıyor...")
-    
-    # %45 Türkçe Veri (Wikipedia)
+    print("1/3 - Türkçe Wikipedia verisi çekiliyor...")
     tr_veri = load_dataset("wikimedia/wikipedia", "20231101.tr", split="train", streaming=True)
     for i, ornek in enumerate(tr_veri):
         if i >= 45000:
             break
-        yield ornek["text"]
+        yield metin_al(ornek)
 
-    # %35 Kod Verisi (Python)
-    kod_veri = load_dataset("bigcode/the-stack-smol", data_dir="data/python", split="train", streaming=True)
+    print("2/3 - Açık kaynak Python kod verisi çekiliyor...")
+    kod_veri = load_dataset("codeparrot/codeparrot-clean", split="train", streaming=True)
     for i, ornek in enumerate(kod_veri):
         if i >= 35000:
             break
-        yield ornek["content"]
+        yield metin_al(ornek)
 
-    # %20 Matematik Verisi
+    print("3/3 - Matematik verisi çekiliyor...")
     mat_veri = load_dataset("open-web-math/open-web-math", split="train", streaming=True)
     for i, ornek in enumerate(mat_veri):
         if i >= 20000:
             break
-        yield ornek["text"]
+        yield metin_al(ornek)
 
 def tokenizer_egit():
     tokenizer = Tokenizer(models.BPE())
@@ -49,7 +53,7 @@ def tokenizer_egit():
         initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
     )
 
-    print("Tokenizer eğitimi başlıyor...")
+    print("Tokenizer eğitimi başlıyor (Rust motoru devrede)...")
     tokenizer.train_from_iterator(veri_uretici(), trainer=egitici)
     tokenizer.save("tokenizer/turkce_kod_mat_tokenizer.json")
     print("Bitti! Dosya 'tokenizer/turkce_kod_mat_tokenizer.json' olarak kaydedildi.")
