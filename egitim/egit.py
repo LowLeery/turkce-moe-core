@@ -70,7 +70,7 @@ scheduler.step()
 
 gecen = time.time() - baslangic
 if adim % 250 == 0:
-guncel_lr = scheduler.get_last_lr()[0]
+guncel_lr = next(iter(scheduler.get_last_lr()))[0]
 disk_gb = kullanilan_disk_gb()
 print(f"Adim {adim} | Loss: {loss.item():.4f} | LR: {guncel_lr:.6f} | Disk: {disk_gb:.2f} GB | Sure: {gecen/60:.1f} dk")
 if disk_gb >= maks_disk_gb:
