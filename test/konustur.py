@@ -22,7 +22,7 @@ sonraki_id = torch.multinomial(probs, num_samples=1)
 x = torch.cat((x, sonraki_id), dim=1)
 if sonraki_id.item() == tokenizer.token_to_id("<|endoftext|>"):
 break
-return tokenizer.decode(x.tolist())
+return tokenizer.decode(x[0].tolist())
 print("\n--- TURKCE CIKTI ---")
 print(uret("Türkiye'nin en önemli teknoloji"))
 print("\n--- PYTHON KOD CIKTISI ---")

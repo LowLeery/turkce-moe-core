@@ -30,7 +30,7 @@ kayit_yolu = "/kaggle/working/turkce_moe_final.pt" if os.path.exists("/kaggle/wo
 os.makedirs("checkpoints", exist_ok=True)
 
 bulunanlar = glob.glob("/kaggle/input/**/turkce_moe_final.pt", recursive=True)
-onceki_model = bulunanlar if bulunanlar else kayit_yolu
+onceki_model = bulunanlar[0] if bulunanlar else kayit_yolu
 
 if os.path.exists(onceki_model):
     ham_model.load_state_dict(torch.load(onceki_model, map_location=cihaz))
@@ -70,7 +70,7 @@ scheduler.step()
 
 gecen = time.time() - baslangic
 if adim % 250 == 0:
-guncel_lr = scheduler.get_last_lr()
+guncel_lr = scheduler.get_last_lr()[0]
 disk_gb = kullanilan_disk_gb()
 print(f"Adim {adim} | Loss: {loss.item():.4f} | LR: {guncel_lr:.6f} | Disk: {disk_gb:.2f} GB | Sure: {gecen/60:.1f} dk")
 if disk_gb >= maks_disk_gb:

@@ -32,7 +32,7 @@ def rope_hesapla(dim: int, max_seq_len: int, theta: float = 10000.0):
     return torch.cos(freqs), torch.sin(freqs)
 
 def rope_uygula(xq, xk, cos, sin):
-    seq_len = xq.shape
+    seq_len = xq.shape[1]
     cos = cos[:seq_len].unsqueeze(0).unsqueeze(2)
     sin = sin[:seq_len].unsqueeze(0).unsqueeze(2)
     xq_r, xq_i = xq.float().reshape(*xq.shape[:-1], -1, 2).unbind(-1)
