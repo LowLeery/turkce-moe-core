@@ -30,7 +30,7 @@ kayit_yolu = "/kaggle/working/turkce_moe_final.pt" if os.path.exists("/kaggle/wo
 os.makedirs("checkpoints", exist_ok=True)
 
 bulunanlar = glob.glob("/kaggle/input/**/turkce_moe_final.pt", recursive=True)
-onceki_model = bulunanlar[0] if bulunanlar else kayit_yolu
+onceki_model = next(iter(bulunanlar), kayit_yolu)
 
 if os.path.exists(onceki_model):
     ham_model.load_state_dict(torch.load(onceki_model, map_location=cihaz))
@@ -55,32 +55,32 @@ adim = 0
 while True:
     adim += 1
     x, y = batch_al(batch_size, ayar.max_seq_len)
+    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+        logits, loss = model(x, targets=y)
+        loss = loss.mean()
+    optimizer.zero_grad(set_to_none=True)
+    scaler.scale(loss).backward()
+    scaler.unscale_(optimizer)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    scaler.step(optimizer)
+    scaler.update()
+    scheduler.step()
 
-with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
-logits, loss = model(x, targets=y)
-loss = loss.mean()
-optimizer.zero_grad(set_to_none=True)
-scaler.scale(loss).backward()
-scaler.unscale_(optimizer)
-torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-scaler.step(optimizer)
-scaler.update()
-scheduler.step()
+    gecen = time.time() - baslangic
+    if adim % 250 == 0:
+        guncel_lr = next(iter(scheduler.get_last_lr()))
+        disk_gb = kullanilan_disk_gb()
+        print(f"Adim {adim} | Loss: {loss.item():.4f} | LR: {guncel_lr:.6f} | Disk: {disk_gb:.2f} GB | Sure: {gecen/60:.1f} dk")
+        if disk_gb >= maks_disk_gb:
+            torch.save(ham_model.state_dict(), kayit_yolu)
+            print(f"DISK SINBI ({disk_gb:.2f} GB): Guvenli durduraldi ve kaydedildi!")
+            break
 
+    if adim % 1500 == 0:
+        torch.save(ham_model.state_dict(), kayit_yolu)
+        print(f"--> [Kayit Guncellendi] Adim {adim} tek dosya uzerine kaydedildi.")
 
-gecen = time.time() - baslangic
-if adim % 250 == 0:
-guncel_lr = next(iter(scheduler.get_last_lr()))[0]
-disk_gb = kullanilan_disk_gb()
-print(f"Adim {adim} | Loss: {loss.item():.4f} | LR: {guncel_lr:.6f} | Disk: {disk_gb:.2f} GB | Sure: {gecen/60:.1f} dk")
-if disk_gb >= maks_disk_gb:
-torch.save(ham_model.state_dict(), kayit_yolu)
-print(f"DISK SINIRI ({disk_gb:.2f} GB): Guvenli durduruldu ve kaydedildi!")
-break
-if adim % 1500 == 0:
-torch.save(ham_model.state_dict(), kayit_yolu)
-print(f"--> [Kayit Guncellendi] Adim {adim} tek dosya uzerine kaydedildi.")
-if gecen >= maks_sure_saniye:
-torch.save(ham_model.state_dict(), kayit_yolu)
-print(f"Sure sinirina ulasildi ({adim} adim). Final model kaydedildi!")
-break
+    if gecen >= maks_sure_saniye:
+        torch.save(ham_model.state_dict(), kayit_yolu)
+        print(f"Sure sinirina ulasildi ({adim} adim). Final model kaydedildi!")
+        break
