@@ -12,7 +12,7 @@ import gdown  # Drive'dan indirme islemi icin eklendi
 from mimari.model import TurkceMoEModel, ModelAyarlari
 
 # --- BURAYA GOOGLE DRIVE PAYLASIM LINKINI YAPISTIR ---
-DRIVE_LINKI = "https://drive.google.com/file/d/1ODLYX08JM9JGt-LI1AJiMVHtvJHEa7wV/view?usp=sharing"
+DRIVE_LINKI = "https://drive.google.com/file/d/1UjISOSjJ3CIBD_P7SWpNnCaGvPTUA4T5/view?usp=sharing"
 # ------------------------------------------------------
 
 # DDP (Cift GPU Tam Guc) Baslatma
@@ -161,6 +161,13 @@ for adim in range(1, toplam_adim + 1):
 if ana_islem:
     torch.save(ham_model.state_dict(), sft_kayit)
     print(f"TAMAMLANDI! Yeni model '{sft_kayit}' olarak kaydedildi.", flush=True)
+    
+    # --- CIFT DOSYA CIKTISINI ENGELLEYEN TEMIZLEME KODU ---
+    eski_dosya = "/kaggle/working/turkce_moe_final.pt"
+    if os.path.exists(eski_dosya):
+        os.remove(eski_dosya)
+        print("Temizlik tamam: Eski 'final.pt' silindi, Kaggle sadece yeni 'sft.pt' dosyasini verecek.", flush=True)
+    # --------------------------------------------------------
 
 if ddp:
     dist.destroy_process_group()
