@@ -49,7 +49,17 @@ model = DDP(ham_model, device_ids=[local_rank], find_unused_parameters=True) if 
 gorevler = [
     {"soru": "Bir sayının çift olup olmadığını kontrol eden 'cift_mi' fonksiyonunu yaz.", "test_kodu": "assert cift_mi(4) == True\nassert cift_mi(5) == False"},
     {"soru": "Verilen iki sayının toplamını döndüren 'topla' fonksiyonunu yaz.", "test_kodu": "assert topla(2, 3) == 5\nassert topla(-1, 1) == 0"},
-    {"soru": "Bir listenin içindeki eleman sayısını döndüren 'uzunluk' fonksiyonunu yaz.", "test_kodu": "assert uzunluk([1, 2, 3]) == 3\nassert uzunluk([]) == 0"}
+    {"soru": "Bir listenin içindeki eleman sayısını döndüren 'uzunluk' fonksiyonunu yaz.", "test_kodu": "assert uzunluk([1, 2, 3]) == 3\nassert uzunluk([]) == 0"},
+    {"soru": "Verilen bir sayının faktöriyelini hesaplayan 'faktoriyel' fonksiyonunu yaz.", "test_kodu": "assert faktoriyel(5) == 120\nassert faktoriyel(0) == 1"},
+    {"soru": "Bir metni tersine çeviren 'ters_cevir' fonksiyonunu yaz.", "test_kodu": "assert ters_cevir('lise') == 'esil'\nassert ters_cevir('yapay') == 'yapay'"},
+    {"soru": "Verilen bir sayının asal olup olmadığını kontrol eden 'asal_mi' fonksiyonunu yaz.", "test_kodu": "assert asal_mi(7) == True\nassert asal_mi(10) == False"},
+    {"soru": "Bir sayı listesindeki en büyük elemanı bulan 'en_buyuk' fonksiyonunu yaz.", "test_kodu": "assert en_buyuk([1, 5, 3]) == 5\nassert en_buyuk([-10, -2, -5]) == -2"},
+    {"soru": "Bir kelimenin palindrom (tersten okunuşu aynı) olup olmadığını kontrol eden 'palindrom_mu' fonksiyonunu yaz.", "test_kodu": "assert palindrom_mu('radar') == True\nassert palindrom_mu('lise') == False"},
+    {"soru": "Bir metindeki sesli harflerin sayısını bulan 'sesli_say' fonksiyonunu yaz.", "test_kodu": "assert sesli_say('merhaba') == 3\nassert sesli_say('xyz') == 0"},
+    {"soru": "Bir sayı listesindeki sadece tek sayıları filtreleyip yeni bir liste döndüren 'tekleri_al' fonksiyonunu yaz.", "test_kodu": "assert tekleri_al([1, 2, 3, 4, 5]) == [1, 3, 5]\nassert tekleri_al([2, 4, 6]) == []"},
+    {"soru": "Verilen iki kelimenin anagram (aynı harflerden oluşma) olup olmadığını kontrol eden 'anagram_mi' fonksiyonunu yaz.", "test_kodu": "assert anagram_mi('elma', 'amel') == True\nassert anagram_mi('lise', 'kedi') == False"},
+    {"soru": "Derece cinsinden sıcaklığı Fahrenheit'a çeviren 'f_cevir' fonksiyonunu yaz.", "test_kodu": "assert f_cevir(0) == 32\nassert f_cevir(100) == 212"},
+    {"soru": "Bir listedeki tüm sayıların ortalamasını bulan 'ortalama' fonksiyonunu yaz.", "test_kodu": "assert ortalama([10, 20, 30]) == 20.0\nassert ortalama([1, 2]) == 1.5"}
 ]
 
 # --- AKILLI KOD AYIKLAYICI VE SANDBOX ---
@@ -84,7 +94,7 @@ def kodu_dogrula(uretilen_metin, test_kodu):
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=0.01)
 scaler = torch.amp.GradScaler("cuda")
 
-for adim in range(1, 201):
+for adim in range(1, 5001):
     model.eval() # Sadece üretim yaparken eval mode
     
     # GPU 0 ve GPU 1'e aynı anda farklı görevler veriyoruz! (Hız ve Çeşitlilik)
