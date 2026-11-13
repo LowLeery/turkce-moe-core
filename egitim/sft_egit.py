@@ -9,6 +9,10 @@ from datasets import load_dataset
 from tokenizers import Tokenizer
 from mimari.model import TurkceMoEModel, ModelAyarlari
 
+# --- BURAYA GOOGLE DRIVE PAYLASIM LINKINI YAPISTIR ---
+DRIVE_LINKI = "https://drive.google.com/file/d/1ODLYX08JM9JGt-LI1AJiMVHtvJHEa7wV/view?usp=sharing"
+# ------------------------------------------------------
+
 # DDP (Cift GPU Tam Guc) Baslatma
 ddp = int(os.environ.get("RANK", -1)) != -1
 if ddp:
