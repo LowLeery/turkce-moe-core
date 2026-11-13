@@ -92,7 +92,7 @@ else:
     if ana_islem:
         print("UYARI: Onceki model bulunamadi! Sagdan Add Input ile defterinizi baglayin.", flush=True)
 
-model = DDP(ham_model, device_ids=[local_rank]) if ddp else ham_model
+model = DDP(ham_model, device_ids=[local_rank], find_unused_parameters=True) if ddp else ham_model
 
 batch_per_gpu = 6
 grad_biriktirme = 2
