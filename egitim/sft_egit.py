@@ -7,6 +7,8 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from datasets import load_dataset
 from tokenizers import Tokenizer
+import gdown  # Drive'dan indirme islemi icin eklendi
+
 from mimari.model import TurkceMoEModel, ModelAyarlari
 
 # --- BURAYA GOOGLE DRIVE PAYLASIM LINKINI YAPISTIR ---
@@ -88,13 +90,34 @@ sft_bul = glob.glob("/kaggle/input/**/turkce_moe_sft.pt", recursive=True)
 temel_bul = glob.glob("/kaggle/input/**/turkce_moe_final.pt", recursive=True)
 yuklenecek = next(iter(sft_bul), next(iter(temel_bul), "/kaggle/working/turkce_moe_final.pt"))
 
+# === MODEL YUKLEME VE DRIVE'DAN INDIRME MANTIGI ===
+if not os.path.exists(yuklenecek):
+    indirme_yolu = "/kaggle/working/turkce_moe_final.pt"
+    
+    # Indirme ismini sadece ana islem (GPU 0) yapar
+    if ana_islem:
+        print("UYARI: Yerel model bulunamadi! Google Drive'dan indiriliyor...", flush=True)
+        try:
+            dosya_id = DRIVE_LINKI.split("/d/")[1].split("/view")[0]
+            gdown.download(id=dosya_id, output=indirme_yolu, quiet=False)
+        except Exception as e:
+            print(f"HATA: Indirme basarisiz oldu. Detay: {e}")
+            
+    # Diger GPU(lar), ana islem indirmeyi bitirene kadar bekler
+    if ddp:
+        dist.barrier()
+        
+    yuklenecek = indirme_yolu
+
+# Tüm GPU'lar dosyayi yuklemeyi dener
 if os.path.exists(yuklenecek):
     ham_model.load_state_dict(torch.load(yuklenecek, map_location=cihaz))
     if ana_islem:
         print(f"BASARILI: '{yuklenecek}' yuklendi!", flush=True)
 else:
     if ana_islem:
-        print("UYARI: Onceki model bulunamadi! Sagdan Add Input ile defterinizi baglayin.", flush=True)
+        print("HATA: Model dosyasi yerelde bulunamadi ve Drive'dan da indirilemedi! Egitim sifirdan basliyor.", flush=True)
+# ===================================================
 
 model = DDP(ham_model, device_ids=[local_rank], find_unused_parameters=True) if ddp else ham_model
 
@@ -108,7 +131,7 @@ scaler = torch.amp.GradScaler("cuda")
 
 sft_kayit = "/kaggle/working/turkce_moe_sft.pt" if os.path.exists("/kaggle/working") else "checkpoints/turkce_moe_sft.pt"
 if ana_islem:
-    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs(os.path.dirname(sft_kayit) or ".", exist_ok=True)
 baslangic = time.time()
 
 for adim in range(1, toplam_adim + 1):
