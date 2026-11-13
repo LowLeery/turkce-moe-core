@@ -1,4 +1,4 @@
-import sys, time, os, warnings
+import sys, time, os, warnings, signal
 warnings.filterwarnings("ignore")
 sys.path.append(".")
 import torch
@@ -9,17 +9,14 @@ import gdown
 
 from mimari.model import TurkceMoEModel, ModelAyarlari
 
-print("🧠 RLVR (Kendi Kendini Doğrulayan Akıl Yürütme) Eğitimi Başlıyor...", flush=True)
+print("🧠 RLVR Eğitimi Başlıyor (Zaman Aşımı Kalkanı Aktif)...", flush=True)
 
 # 1. Cihaz ve Tokenizer Ayarları
 cihaz = "cuda" if torch.cuda.is_available() else "cpu"
 tokenizer = Tokenizer.from_file("tokenizer/turkce_kod_mat_tokenizer.json")
-pad_id = tokenizer.token_to_id("<|pad|>")
 
-# 2. En güncel SFT modelimizi yüklüyoruz ki sıfırdan değil, akıllı modelin üstünden başlayalım
 sft_model_yolu = "turkce_moe_sft.pt"
 if not os.path.exists(sft_model_yolu):
-    # Eğer yerelde yoksa Drive'dan otomatik indir
     DRIVE_LINKI = "https://drive.google.com/file/d/1UjISOSjJ3CIBD_P7SWpNnCaGvPTUA4T5/view?usp=sharing"
     dosya_id = DRIVE_LINKI.split("/d/")[1].split("/view")[0]
     print("SFT modeli Drive'dan indiriliyor...", flush=True)
@@ -30,91 +27,71 @@ model = TurkceMoEModel(ayar).to(cihaz)
 model.load_state_dict(torch.load(sft_model_yolu, map_location=cihaz))
 print("✅ SFT Temelli Model RLVR için Yüklendi!", flush=True)
 
-# 3. Basit Python Kod Görevleri ve Test Senaryoları (Sandbox Doğrulama İçin)
-# Modelin çözmesini isteyeceğimiz görevler ve onları test edecek Python assert komutları
 gorevler = [
-    {
-        "soru": "Bir sayının çift olup olmadığını kontrol eden 'cift_mi' fonksiyonunu yaz.",
-        "test_kodu": "assert cift_mi(4) == True\nassert cift_mi(5) == False\n"
-    },
-    {
-        "soru": "Verilen iki sayının toplamını döndüren 'topla' fonksiyonunu yaz.",
-        "test_kodu": "assert topla(2, 3) == 5\nassert topla(-1, 1) == 0\n"
-    },
-    {
-        "soru": "Bir listenin içindeki eleman sayısını döndüren 'uzunluk' fonksiyonunu yaz.",
-        "test_kodu": "assert uzunluk([1, 2, 3]) == 3\nassert uzunluk([]) == 0\n"
-    }
+    {"soru": "Bir sayının çift olup olmadığını kontrol eden 'cift_mi' fonksiyonunu yaz.", "test_kodu": "assert cift_mi(4) == True\nassert cift_mi(5) == False\n"},
+    {"soru": "Verilen iki sayının toplamını döndüren 'topla' fonksiyonunu yaz.", "test_kodu": "assert topla(2, 3) == 5\nassert topla(-1, 1) == 0\n"},
+    {"soru": "Bir listenin içindeki eleman sayısını döndüren 'uzunluk' fonksiyonunu yaz.", "test_kodu": "assert uzunluk([1, 2, 3]) == 3\nassert uzunluk([]) == 0\n"}
 ]
 
-# 4. Python Kodunu Güvenli Çalıştırma ve Doğrulama Fonksiyonu (Sandbox)
-def kodu_dogrula(uretilen_kod, test_kodu):
-    """
-    Modelin ürettiği Python kodunu ve test kodunu birleştirip çalıştırır.
-    Hatasız çalışırsa True (Ödül), hata verirse False (Ceza) döndürür.
-    """
-    tam_kod = uretilen_kod + "\n" + test_kodu
-    
-    # Güvenli Alan (Namespace)
-    yerel_alan = {}
-    try:
-        # Kodun zaman aşımına uğramasını veya sonsuz döngüye girmesini engellemek için basit exec
-        exec(tam_kod, {"__builtins__": __builtins__}, yerel_alan)
-        return True # Testleri geçti! ÖDÜL 🏆
-    except Exception as e:
-        return False # Hata verdi! CEZA ❌
+# --- ZAMAN AŞIMI KALKANI (Sonsuz Döngü Engeli) ---
+def zaman_asimi_yakalayici(signum, frame):
+    raise TimeoutError("Sonsuz Döngü")
 
-# 5. Optimizer ve Eğitim Ayarları
+def kodu_dogrula(uretilen_kod, test_kodu):
+    tam_kod = uretilen_kod + "\n" + test_kodu
+    yerel_alan = {}
+    
+    # Koda en fazla 2 saniye çalışma süresi veriyoruz
+    signal.signal(signal.SIGALRM, zaman_asimi_yakalayici)
+    signal.alarm(2) 
+    
+    try:
+        exec(tam_kod, {"__builtins__": __builtins__}, yerel_alan)
+        signal.alarm(0) # Başarılıysa alarmı kapat
+        return True
+    except TimeoutError:
+        print("⏳ Uyarı: Model sonsuz döngüye girdi, ceza veriliyor...", flush=True)
+        return False
+    except Exception:
+        signal.alarm(0) # Diğer hatalar (Syntax Error vb.)
+        return False
+# ------------------------------------------------
+
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=0.01)
 scaler = torch.amp.GradScaler("cuda")
 
-print("🚀 RLVR Döngüsü Başlatılıyor... Model kendi hatalarından ders alacak.", flush=True)
-
-# Basit bir RLVR iterasyon döngüsü (Policy Gradient / Reward Temelli Güncelleme)
+print("🚀 RLVR Döngüsü Başlatılıyor...", flush=True)
 model.train()
-for adim in range(1, 201): # Örnek olarak 200 adım
-    # Rastgele bir görev seç
+
+for adim in range(1, 201):
     gorev = gorevler[(adim - 1) % len(gorevler)]
-    soru = gorev["soru"]
-    test_kodu = gorev["test_kodu"]
-    
-    prompt = f"<|user|>\n{soru}\n<|assistant|>\n"
+    prompt = f"<|user|>\n{gorev['soru']}\n<|assistant|>\n"
     girdi_ids = tokenizer.encode(prompt).ids
     girdi_tensor = torch.tensor([girdi_ids], dtype=torch.long).to(cihaz)
     
-    # Modelden Kod Üretmesini İstiyoruz
     uretilen_ids = []
     with torch.no_grad():
-        for _ in range(120): # Maksimum 120 token üretsin
+        for _ in range(120):
             logits, _ = model(girdi_tensor)
-            son_token_logits = logits[0, -1, :] / 0.7 # Temperature
+            son_token_logits = logits[0, -1, :] / 0.7
             olasiliklar = torch.nn.functional.softmax(son_token_logits, dim=-1)
             siradaki_token = torch.multinomial(olasiliklar, num_samples=1).item()
-            
-            if siradaki_token == tokenizer.token_to_id("<|endoftext|>"):
-                break
+            if siradaki_token == tokenizer.token_to_id("<|endoftext|>"): break
             uretilen_ids.append(siradaki_token)
             yeni_tensor = torch.tensor([[siradaki_token]], dtype=torch.long).to(cihaz)
             girdi_tensor = torch.cat([girdi_tensor, yeni_tensor], dim=1)
             
-    # Üretilen metni çöz
     uretilen_metin = tokenizer.decode(uretilen_ids)
+    basarili_mi = kodu_dogrula(uretilen_metin, gorev["test_kodu"])
     
-    # 6. Doğrulama (Verification) Aşaması
-    basarili_mi = kodu_dogrula(uretilen_metin, test_kodu)
-    
-    # RLVR Ödül / Ceza Sinyali (Reward Shaping)
-    # Eğer kod testleri geçerse pozitif ödül, geçemezse hafif cezalandırma mantığıyla loss şekillendirilir
     optimizer.zero_grad(set_to_none=True)
-    
-    # Basitçe modelin ürettiği tokenlar üzerinden loss hesaplayıp ödül katsatısı ile çarpıyoruz
     if girdi_tensor.size(1) > 1:
         with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
             logits, _ = model(girdi_tensor[:, :-1])
             hedef = girdi_tensor[:, 1:]
             loss = nn.functional.cross_entropy(logits.reshape(-1, logits.size(-1)), hedef.reshape(-1), ignore_index=-150)
             
-            # Ödül varsa loss'u küçült (pekiştir), ceza varsa tersine çevir
+            # Başarılıysa -1 (Ödül), Hatalıysa +0.5 (Ceza)
             odul_carpani = -1.0 if basarili_mi else 0.5
             loss = loss * odul_carpani
             
@@ -122,11 +99,10 @@ for adim in range(1, 201): # Örnek olarak 200 adım
         scaler.step(optimizer)
         scaler.update()
 
-    if adim % 20 == 0:
-        durum = "🏆 BAŞARILI (Ödül Verildi)" if basarili_mi else "❌ HATA (Düzeltme Bekleniyor)"
-        print(f"RLVR Adım {adim}/200 | Durum: {durum}", flush=True)
+    if adim % 5 == 0:
+        durum = "🏆 BAŞARILI" if basarili_mi else "❌ HATA"
+        print(f"Adım {adim}/200 | {durum}", flush=True)
 
-# Eğitilen RLVR Modelini Kaydet
 rl_kayit_yolu = "/kaggle/working/turkce_moe_rlvr.pt"
 torch.save(model.state_dict(), rl_kayit_yolu)
-print(f"🔥 RLVR Eğitimi Tamamlandı! Yeni model '{rl_kayit_yolu}' olarak kaydedildi.", flush=True)
+print(f"🔥 RLVR Tamamlandı! '{rl_kayit_yolu}' kaydedildi.", flush=True)
