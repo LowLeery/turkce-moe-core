@@ -33,19 +33,19 @@ sft_model_yolu = "turkce_moe_sft.pt"
 if not os.path.exists(sft_model_yolu):
     if ana_islem:
         print("SFT modeli Drive'dan indiriliyor...", flush=True)
-        DRIVE_LINKI = "[https://drive.google.com/file/d/1UjISOSjJ3CIBD_P7SWpNnCaGvPTUA4T5/view?usp=sharing](https://drive.google.com/file/d/1UjISOSjJ3CIBD_P7SWpNnCaGvPTUA4T5/view?usp=sharing)"
+        DRIVE_LINKI = "https://drive.google.com/file/d/1UjISOSjJ3CIBD_P7SWpNnCaGvPTUA4T5/view?usp=sharing"
         dosya_id = DRIVE_LINKI.split("/d/")[1].split("/view")[0]
         gdown.download(id=dosya_id, output=sft_model_yolu, quiet=False)
     if ddp:
-        dist.barrier() # Ana işlem indirmeyi bitirene kadar diğer GPU beklesin
+        dist.barrier()
 
 ayar = ModelAyarlari(max_seq_len=512)
 ham_model = TurkceMoEModel(ayar).to(cihaz)
 ham_model.load_state_dict(torch.load(sft_model_yolu, map_location=cihaz))
 
-# Modeli DDP ile sarıyoruz
 model = DDP(ham_model, device_ids=[local_rank], find_unused_parameters=True) if ddp else ham_model
 
+# 13 GÖREVLİK ZENGİN EĞİTİM PARKURU
 gorevler = [
     {"soru": "Bir sayının çift olup olmadığını kontrol eden 'cift_mi' fonksiyonunu yaz.", "test_kodu": "assert cift_mi(4) == True\nassert cift_mi(5) == False"},
     {"soru": "Verilen iki sayının toplamını döndüren 'topla' fonksiyonunu yaz.", "test_kodu": "assert topla(2, 3) == 5\nassert topla(-1, 1) == 0"},
@@ -62,12 +62,10 @@ gorevler = [
     {"soru": "Bir listedeki tüm sayıların ortalamasını bulan 'ortalama' fonksiyonunu yaz.", "test_kodu": "assert ortalama([10, 20, 30]) == 20.0\nassert ortalama([1, 2]) == 1.5"}
 ]
 
-# --- AKILLI KOD AYIKLAYICI VE SANDBOX ---
 def zaman_asimi_yakalayici(signum, frame):
     raise TimeoutError("Sonsuz Dongu")
 
 def kodu_dogrula(uretilen_metin, test_kodu):
-    # Modelin muhabbetini at, sadece kodu cımbızla (Regex)
     temiz_kod = uretilen_metin
     eslesme = re.search(r"```(?:python)?(.*?)```", uretilen_metin, re.DOTALL)
     if eslesme:
@@ -86,18 +84,20 @@ def kodu_dogrula(uretilen_metin, test_kodu):
     try:
         exec(tam_kod, {"__builtins__": __builtins__}, yerel_alan)
         signal.alarm(0)
-        return True # Testten geçti!
+        return True 
     except Exception:
         signal.alarm(0)
-        return False # Hata verdi
+        return False 
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=0.01)
 scaler = torch.amp.GradScaler("cuda")
 
+# Kronometre için başlangıç zamanını kaydediyoruz
+baslangic_zamani = time.time()
+
 for adim in range(1, 5001):
-    model.eval() # Sadece üretim yaparken eval mode
+    model.eval() 
     
-    # GPU 0 ve GPU 1'e aynı anda farklı görevler veriyoruz! (Hız ve Çeşitlilik)
     gorev_idx = (adim + local_rank) % len(gorevler) 
     gorev = gorevler[gorev_idx]
     
@@ -108,7 +108,6 @@ for adim in range(1, 5001):
     uretilen_ids = []
     with torch.no_grad():
         for _ in range(120):
-            # DDP darboğazını aşmak için base modeli (ham_model) kullanıyoruz
             logits, _ = ham_model(girdi_tensor)
             son_token_logits = logits[0, -1, :] / 0.7
             olasiliklar = torch.nn.functional.softmax(son_token_logits, dim=-1)
@@ -121,7 +120,6 @@ for adim in range(1, 5001):
     uretilen_metin = tokenizer.decode(uretilen_ids)
     basarili_mi = kodu_dogrula(uretilen_metin, gorev["test_kodu"])
     
-    # EĞİTİM VE ÖDÜL/CEZA AŞAMASI
     model.train() 
     optimizer.zero_grad(set_to_none=True)
     if girdi_tensor.size(1) > 1:
@@ -130,25 +128,33 @@ for adim in range(1, 5001):
             hedef = girdi_tensor[:, 1:]
             loss = nn.functional.cross_entropy(logits.reshape(-1, logits.size(-1)), hedef.reshape(-1), ignore_index=-150)
             
-            # Başarıya Büyük Ödül (-1.0), Hataya Hafif Ceza (+0.2)
             odul_carpani = -1.0 if basarili_mi else 0.2
             loss = loss * odul_carpani
             
         scaler.scale(loss).backward()
-        
-        # Patlamaları engellemek için gradyan kırpma (Gradient Clipping)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        
         scaler.step(optimizer)
         scaler.update()
 
-    # Logları sadece Ana GPU bassın ki ekran kirlenmesin
+    # Log ekranı (Kronometre eklendi)
     if ana_islem and adim % 2 == 0:
+        gecen_sure = time.time() - baslangic_zamani
+        saat = int(gecen_sure // 3600)
+        dakika = int((gecen_sure % 3600) // 60)
+        saniye = int(gecen_sure % 60)
+        zaman_yazisi = f"{saat:02d}:{dakika:02d}:{saniye:02d}"
+        
         durum = "🏆 BAŞARILI (Ödül!)" if basarili_mi else "❌ HATA (Ceza)"
-        print(f"DDP Adım {adim}/200 | {durum}", flush=True)
+        print(f"[{zaman_yazisi}] DDP Adım {adim}/5000 | {durum}", flush=True)
+
+    # Her 1000 adımda bir ara kayıt (Checkpoint) alıyoruz
+    if ana_islem and adim % 1000 == 0:
+        ara_kayit = f"/kaggle/working/turkce_moe_rlvr_{adim}.pt"
+        torch.save(ham_model.state_dict(), ara_kayit)
+        print(f"💾 EVRİM KAYDEDİLDİ: {ara_kayit}", flush=True)
 
 if ana_islem:
-    rl_kayit = "/kaggle/working/turkce_moe_rlvr.pt"
+    rl_kayit = "/kaggle/working/turkce_moe_rlvr_final.pt"
     torch.save(ham_model.state_dict(), rl_kayit)
     print(f"🔥 Çift GPU RLVR Eğitimi Tamamlandı! Model '{rl_kayit}' olarak kaydedildi.", flush=True)
 
